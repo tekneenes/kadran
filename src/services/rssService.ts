@@ -80,70 +80,97 @@ function cleanText(text: string): string {
     .trim();
 }
 
+async function fetchFeed(feed: { name: string; url: string }): Promise<NewsItem[]> {
+  const isLocalApi = feed.url.startsWith('/api/');
+
+  if (!isLocalApi) {
+    // Try rss2json.com API first in production for high speed and reliability
+    try {
+      const response = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(feed.url)}`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.status === 'ok' && Array.isArray(data.items)) {
+          return data.items.map((item: any, idx: number) => ({
+            id: `${feed.name}-${idx}-${Date.now()}`,
+            title: cleanText(item.title),
+            link: cleanText(item.link),
+            source: feed.name,
+            type: 'news'
+          }));
+        }
+      }
+    } catch (e) {
+      console.warn(`rss2json failed for ${feed.name}, falling back to proxies...`, e);
+    }
+  }
+
+  // Fallback to fetching XML via CORS proxies
+  const xmlText = await fetchWithFallback(feed.url);
+  const parser = new DOMParser();
+  const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
+
+  const parserError = xmlDoc.querySelector('parsererror');
+  if (parserError) throw new Error('XML parsing error');
+
+  const items = xmlDoc.getElementsByTagName('item');
+  const entries = xmlDoc.getElementsByTagName('entry');
+  const feedItems: NewsItem[] = [];
+
+  if (items.length > 0) {
+    // Standard RSS Format (e.g. TRT Haber, Webtekno)
+    for (let i = 0; i < Math.min(items.length, 10); i++) {
+      const item = items[i];
+      const titleNode = item.getElementsByTagName('title')[0];
+      const linkNode = item.getElementsByTagName('link')[0];
+
+      if (titleNode && linkNode) {
+        const title = cleanText(titleNode.textContent || '');
+        const link = cleanText(linkNode.textContent || '');
+
+        if (title && link) {
+          feedItems.push({
+            id: `${feed.name}-${i}-${Date.now()}`,
+            title,
+            link,
+            source: feed.name,
+            type: 'news',
+          });
+        }
+      }
+    }
+  } else if (entries.length > 0) {
+    // Atom Feed Format (e.g. NTV)
+    for (let i = 0; i < Math.min(entries.length, 10); i++) {
+      const entry = entries[i];
+      const titleNode = entry.getElementsByTagName('title')[0];
+      const linkNode = entry.getElementsByTagName('link')[0];
+
+      if (titleNode && linkNode) {
+        const title = cleanText(titleNode.textContent || '');
+        let link = linkNode.getAttribute('href') || linkNode.textContent || '';
+        link = cleanText(link);
+
+        if (title && link) {
+          feedItems.push({
+            id: `${feed.name}-${i}-${Date.now()}`,
+            title,
+            link,
+            source: feed.name,
+            type: 'news',
+          });
+        }
+      }
+    }
+  }
+  return feedItems;
+}
+
 export async function fetchAllNews(): Promise<NewsItem[]> {
   const promises = FEEDS.map(async (feed, index) => {
     try {
       // Stagger request startup to avoid rate-limiting on public proxies
       await new Promise((resolve) => setTimeout(resolve, index * 250));
-      const xmlText = await fetchWithFallback(feed.url);
-      const parser = new DOMParser();
-      const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
-      
-      const parserError = xmlDoc.querySelector('parsererror');
-      if (parserError) throw new Error('XML parsing error');
-
-      const items = xmlDoc.getElementsByTagName('item');
-      const entries = xmlDoc.getElementsByTagName('entry');
-      const feedItems: NewsItem[] = [];
-
-      if (items.length > 0) {
-        // Standard RSS Format (e.g. TRT Haber, Webtekno)
-        for (let i = 0; i < Math.min(items.length, 10); i++) {
-          const item = items[i];
-          const titleNode = item.getElementsByTagName('title')[0];
-          const linkNode = item.getElementsByTagName('link')[0];
-
-          if (titleNode && linkNode) {
-            const title = cleanText(titleNode.textContent || '');
-            const link = cleanText(linkNode.textContent || '');
-            
-            if (title && link) {
-              feedItems.push({
-                id: `${feed.name}-${i}-${Date.now()}`,
-                title,
-                link,
-                source: feed.name,
-                type: 'news',
-              });
-            }
-          }
-        }
-      } else if (entries.length > 0) {
-        // Atom Feed Format (e.g. NTV)
-        for (let i = 0; i < Math.min(entries.length, 10); i++) {
-          const entry = entries[i];
-          const titleNode = entry.getElementsByTagName('title')[0];
-          const linkNode = entry.getElementsByTagName('link')[0];
-
-          if (titleNode && linkNode) {
-            const title = cleanText(titleNode.textContent || '');
-            // In Atom feeds, the link is usually in the href attribute
-            let link = linkNode.getAttribute('href') || linkNode.textContent || '';
-            link = cleanText(link);
-            
-            if (title && link) {
-              feedItems.push({
-                id: `${feed.name}-${i}-${Date.now()}`,
-                title,
-                link,
-                source: feed.name,
-                type: 'news',
-              });
-            }
-          }
-        }
-      }
-      return feedItems;
+      return await fetchFeed(feed);
     } catch (error) {
       console.warn(`Failed to fetch RSS feed for ${feed.name}:`, error);
       return [];
