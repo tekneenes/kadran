@@ -7,9 +7,9 @@ export interface NewsItem {
 }
 
 const PROXIES = [
-  'https://api.allorigins.win/raw?url=',
-  'https://corsproxy.io/?',
-  'https://api.codetabs.com/v1/proxy?quest=',
+  'https://api.allorigins.win/get?url=',
+  'https://corsproxy.io/?url=',
+  'https://cors.x2u.in/',
 ];
 
 const isDev = import.meta.env.DEV;
@@ -35,16 +35,28 @@ async function fetchWithFallback(targetUrl: string): Promise<string> {
 
   for (const proxy of PROXIES) {
     try {
-      const url = `${proxy}${encodeURIComponent(targetUrl)}`;
+      const isAllOrigins = proxy.includes('allorigins.win');
+      const isPathBased = proxy.includes('cors.x2u.in');
+      const url = isPathBased
+        ? `${proxy}${targetUrl}`
+        : `${proxy}${encodeURIComponent(targetUrl)}`;
+
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 6000); // 6 seconds timeout
-      
+      const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 seconds timeout
+
       const response = await fetch(url, { signal: controller.signal });
       clearTimeout(timeoutId);
-      
+
       if (response.ok) {
-        const text = await response.text();
-        if (text && (text.includes('<rss') || text.includes('<feed') || text.includes('<xml') || text.includes('<item'))) {
+        let text = '';
+        if (isAllOrigins) {
+          const json = await response.json();
+          text = json.contents || '';
+        } else {
+          text = await response.text();
+        }
+
+        if (text && (text.includes('<rss') || text.includes('<feed') || text.includes('<xml') || text.includes('<item') || text.includes('<entry'))) {
           return text;
         }
       }
@@ -69,8 +81,10 @@ function cleanText(text: string): string {
 }
 
 export async function fetchAllNews(): Promise<NewsItem[]> {
-  const promises = FEEDS.map(async (feed) => {
+  const promises = FEEDS.map(async (feed, index) => {
     try {
+      // Stagger request startup to avoid rate-limiting on public proxies
+      await new Promise((resolve) => setTimeout(resolve, index * 250));
       const xmlText = await fetchWithFallback(feed.url);
       const parser = new DOMParser();
       const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
