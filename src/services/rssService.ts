@@ -165,6 +165,28 @@ async function fetchFeed(feed: { name: string; url: string }): Promise<NewsItem[
   return feedItems;
 }
 
+async function fetchFallbackNews(): Promise<NewsItem[]> {
+  try {
+    const baseUrl = import.meta.env.BASE_URL || '/';
+    const response = await fetch(`${baseUrl}fallback-news.json`);
+    if (response.ok) {
+      const data = await response.json();
+      if (Array.isArray(data)) {
+        return data.map((item: any, idx: number) => ({
+          id: `fallback-${idx}-${Date.now()}`,
+          title: cleanText(item.title),
+          link: cleanText(item.link),
+          source: item.source || 'GÜNCEL',
+          type: 'news'
+        }));
+      }
+    }
+  } catch (e) {
+    console.error('Failed to fetch fallback news:', e);
+  }
+  return [];
+}
+
 export async function fetchAllNews(): Promise<NewsItem[]> {
   const promises = FEEDS.map(async (feed, index) => {
     try {
@@ -178,13 +200,18 @@ export async function fetchAllNews(): Promise<NewsItem[]> {
   });
 
   const results = await Promise.allSettled(promises);
-  const allNews: NewsItem[] = [];
+  let allNews: NewsItem[] = [];
 
   results.forEach((result) => {
     if (result.status === 'fulfilled') {
       allNews.push(...result.value);
     }
   });
+
+  if (allNews.length === 0) {
+    console.log('All feeds failed. Loading local fallback news...');
+    allNews = await fetchFallbackNews();
+  }
 
   // Interleave and randomize feeds slightly to provide a rich feed mix
   return shuffleArray(allNews);
