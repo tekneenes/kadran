@@ -1,0 +1,6 @@
+{
+  "name": "Retro Flip Timer Dashboard",
+  "description": "Şık, retro flip-clock tarzı zamanlayıcı, gerçek zamanlı döviz/altın fiyatları ve Türkiye hava durumu paneli.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
