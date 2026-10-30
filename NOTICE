@@ -1,0 +1,13 @@
+Kadran — Retro Flip-Clock Timer & Ambient Productivity Dashboard
+Copyright 2026 Muhammed Enes Tekne (https://github.com/tekneenes)
+
+This product includes software developed by Muhammed Enes Tekne and
+the open-source community.
+
+Third-Party Dependencies & Libraries:
+- React & React-DOM (Meta Platforms, Inc. - MIT License)
+- Vite (Evan You & Vite Contributors - MIT License)
+- Tailwind CSS (Tailwind Labs - MIT License)
+- Motion / Framer Motion (Framer B.V. - MIT License)
+- Lucide Icons (Lucide Project - ISC License)
+- Google GenAI SDK (Google LLC - Apache License 2.0)
